@@ -60,4 +60,4 @@ async def to_code(config: dict) -> None:
     await uart.register_uart_device(var, config)
 
     # Ensure C++17 support for std::optional
-    cg.add_build_flags("-std=gnu++17")
+    cg.add_build_flag("-std=gnu++17")
