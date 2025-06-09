@@ -162,8 +162,8 @@ void DeskHeightSensor::loop() {
 }
 
 void DeskHeightSensor::dump_config() {
-    ESP_LOGCONFIG(TAG, "LoctekMotion Desk Height Sensor:");
-    LOG_UPDATE_INTERVAL(this);
+    ESP_LOGCONFIG(TAG, "LoctekMotion Desk Height Sensor");
+    ESP_LOGCONFIG(TAG, "  Using UART for continuous updates");
 }
 
 } // namespace loctekmotion_desk_height
