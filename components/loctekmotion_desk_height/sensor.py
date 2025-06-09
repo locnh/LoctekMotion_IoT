@@ -58,6 +58,3 @@ async def to_code(config: dict) -> None:
     await sensor.register_sensor(var, config)
     await cg.register_component(var, config)
     await uart.register_uart_device(var, config)
-
-    # Ensure C++17 support for std::optional
-    cg.add_build_flag("-std=gnu++17")

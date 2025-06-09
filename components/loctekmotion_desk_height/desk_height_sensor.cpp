@@ -54,7 +54,7 @@ int hex_to_int(uint8_t segment_byte) {
         case 0b1111111: return 8;  // abcdefg
         case 0b1101111: return 9;  // abcdfg
         case 0b0100000: return 10; // g (hyphen)
-        default:        return -1; // Invalid pattern
+        default:        return -1; // Invalid pattern // Note: if 0b0100000 is segment 'f', comment should be '// f (hyphen)'
     }
 }
 
@@ -68,62 +68,85 @@ bool has_decimal_point(uint8_t segment_byte) {
 }
 
 // ========== PACKET PARSING ==========
+void DeskHeightSensor::setup() {
+    // Initialization, if any, can go here.
+    // UART setup is handled by the base UARTDevice class.
+    this->reset_state(); // Ensure a clean state on setup.
+}
+
 void DeskHeightSensor::reset_state() {
-    this->msg_len = 0;
-    this->msg_type = 0;
-    this->is_valid_packet = false;
-    std::fill(std::begin(this->history), std::end(this->history), 0);
+    this->msg_len_ = 0;
+    this->msg_type_ = 0;
+    this->is_valid_packet_ = false;
+    // Do NOT clear history_ here, it's a sliding window.
 }
 
 void DeskHeightSensor::process_packet_byte(uint8_t byte) {
     // Shift history buffer
     for (int i = HISTORY_BUFFER_SIZE - 1; i > 0; i--) {
-        this->history[i] = this->history[i - 1];
+        this->history_[i] = this->history_[i - 1];
     }
-    this->history[0] = byte;
+    this->history_[0] = byte;
     
     // Check for packet start
     if (byte == PACKET_START_BYTE) {
-        this->reset_state();
+        // Reset packet metadata, history_[0] now holds the START_BYTE
+        this->reset_state(); 
         return;
     }
     
     // Process packet data based on position in history
-    if (this->history[1] == PACKET_START_BYTE) {
-        this->msg_len = byte;  // Second byte is message length
-    } else if (this->history[2] == PACKET_START_BYTE) {
-        this->msg_type = byte;  // Third byte is message type
-    } else if (this->history[3] == PACKET_START_BYTE) {
+    if (this->history_[1] == PACKET_START_BYTE) {
+        this->msg_len_ = byte;  // Second byte is message length
+    } else if (this->history_[2] == PACKET_START_BYTE) {
+        this->msg_type_ = byte;  // Third byte is message type
+    } else if (this->history_[3] == PACKET_START_BYTE) {
         // Fourth byte is first height digit (for height messages)
-        if (this->msg_type == HEIGHT_MESSAGE_TYPE && 
-            (this->msg_len == 7 || this->msg_len == 10)) {
-            this->is_valid_packet = (byte != 0 && hex_to_int(byte) != 0);
+        if (this->msg_type_ == HEIGHT_MESSAGE_TYPE &&
+            (this->msg_len_ == 7 || this->msg_len_ == 10)) {
+            this->is_valid_packet_ = (byte != 0 && hex_to_int(byte) != 0);
+            if (!this->is_valid_packet_) {
+                ESP_LOGD(TAG, "Invalid D1: byte=0x%02X, val=%d", byte, hex_to_int(byte));
+            }
         }
-    } else if (this->history[4] == PACKET_START_BYTE && this->is_valid_packet) {
-        // Fifth byte is second height digit
-        // No action needed, just store in history for final processing
-    } else if (this->history[5] == PACKET_START_BYTE && this->is_valid_packet) {
-        // Sixth byte is third height digit - process complete height value
+    } else if (this->history_[4] == PACKET_START_BYTE && this->is_valid_packet_) {
+        // Current byte is D2 (fifth byte after START_BYTE)
+        // No specific action, D2 is stored in history_[0]
+    } else if (this->history_[5] == PACKET_START_BYTE && this->is_valid_packet_) {
+        // Current byte is D3 (sixth byte after START_BYTE) - process complete height value
         process_height_value(byte);
     }
 }
 
-void DeskHeightSensor::process_height_value(uint8_t third_digit) {
-    const int height1 = hex_to_int(this->history[1]) * 100;  // Hundreds
-    const int height2 = hex_to_int(this->history[0]) * 10;   // Tens
-    const int height3 = hex_to_int(third_digit);             // Units
+void DeskHeightSensor::process_height_value(uint8_t d3_byte_arg) {
+    // When this is called:
+    // d3_byte_arg is history_[0] (current byte, D3)
+    // history_[1] is D2
+    // history_[2] is D1
+    const int d1_val = hex_to_int(this->history_[2]); // Hundreds
+    const int d2_val = hex_to_int(this->history_[1]); // Tens
+    const int d3_val = hex_to_int(d3_byte_arg);       // Units
     
-    // Skip if the tens digit is a hyphen (value 10 * 10 = 100)
-    if (height2 != 100) {
-        float final_height = height1 + height2 + height3;
+    // Validate digits: D1 must be 1-9. D2, D3 must be 0-9. D2 can be 10 (hyphen).
+    if (d1_val >= 1 && d1_val <= 9 && d2_val >= 0 && d2_val <= 10 && d3_val >= 0 && d3_val <= 9) {
+        if (d2_val == 10) { // Tens digit is a hyphen
+            ESP_LOGD(TAG, "Hyphen in tens place (D2 from 0x%02X), skipping height update.", this->history_[1]);
+            return;
+        }
+        float final_height = (d1_val * 100) + (d2_val * 10) + d3_val;
         
-        // Apply decimal point if needed (from the tens digit)
-        if (has_decimal_point(this->history[0])) {
+        // Apply decimal point if needed (from the D2 byte)
+        if (has_decimal_point(this->history_[1])) {
             final_height /= 10.0f;
         }
         
-        this->value = final_height;
-        ESP_LOGD(TAG, "Desk height updated: %.1f cm", this->value);
+        this->value_data_ = final_height;
+        this->has_value_ = true;
+        ESP_LOGD(TAG, "Desk height updated: %.1f cm", this->value_data_);
+    }
+    else {
+      ESP_LOGD(TAG, "Invalid digits for height: D1=%d (0x%02X), D2=%d (0x%02X), D3=%d (0x%02X)",
+                d1_val, this->history_[2], d2_val, this->history_[1], d3_val, d3_byte_arg);
     }
 }
 
@@ -136,11 +159,12 @@ void DeskHeightSensor::loop() {
             process_packet_byte(incoming_byte);
             
             // Check for packet end and publish if we have a new value
-            if (incoming_byte == PACKET_END_BYTE && 
-                this->value.has_value() && 
-                this->value != this->last_published_value) {
-                this->publish_state(*this->value);
-                this->last_published_value = *this->value;
+            if (incoming_byte == PACKET_END_BYTE &&
+                this->has_value_ &&
+                (!this->has_last_published_value_ || this->value_data_ != this->last_published_value_data_)) {
+                this->publish_state(this->value_data_);
+                this->last_published_value_data_ = this->value_data_;
+                this->has_last_published_value_ = true;
             }
         }
     }

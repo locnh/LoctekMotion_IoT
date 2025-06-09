@@ -1,7 +1,6 @@
 #pragma once
 
 #include <array>
-#include <optional>
 
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/components/uart/uart.h"
@@ -43,13 +42,16 @@ private:
     void process_height_value(uint8_t third_digit);
 
     // ========== MEMBER VARIABLES ==========
-    static constexpr size_t HISTORY_BUFFER_SIZE = 5;
+    // Needs to be 6 to access history_[5] for PACKET_START_BYTE check when processing 6th data byte (D3)
+    static constexpr size_t HISTORY_BUFFER_SIZE = 6;
     
     /// Last calculated height value (in cm)
-    std::optional<float> value_;
+    float value_data_{0.0f};
+    bool has_value_{false};
     
     /// Last published height value (to avoid duplicate updates)
-    std::optional<float> last_published_value_;
+    float last_published_value_data_{0.0f};
+    bool has_last_published_value_{false};
     
     /// Buffer to track the last few bytes for packet parsing
     std::array<uint8_t, HISTORY_BUFFER_SIZE> history_ = {0};
