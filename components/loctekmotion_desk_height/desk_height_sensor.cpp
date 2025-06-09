@@ -16,27 +16,46 @@ static constexpr size_t HISTORY_BUFFER_SIZE = 5;
 
 // ========== UTILITY METHODS ==========
 /**
- * Converts a 7-segment display byte to its numeric value
- * @param segment_byte The byte representing the 7-segment display
- * @return The numeric value (0-10) where 10 represents a hyphen (-)
+ * @brief Convert a 7-segment display pattern byte to its corresponding digit
+ * 
+ * This function decodes the segment pattern from a 7-segment display byte.
+ * The segments are mapped to bits in the following order (LSB to MSB):
+ *
+ *    -- a --    Bit 0: segment a (bottom)
+ *   |       |   Bit 1: segment b (lower right)
+ *   f       b   Bit 2: segment c (upper right)
+ *   |       |   Bit 3: segment d (top)
+ *    -- g --    Bit 4: segment e (upper left)
+ *   |       |   Bit 5: segment f (lower left)
+ *   e       c   Bit 6: segment g (middle)
+ *   |       | 
+ *    -- d --
+ *
+ * For example, the digit '0' is represented by lighting up segments a-f (0b0111111).
+ * The decimal point (DP) is ignored as it's masked out (bit 7).
+ * 
+ * @param segment_byte The byte containing the segment pattern (bit 7 = DP, bits 6-0 = segments g-a)
+ * @return int8_t The decoded digit (0-9), 10 for hyphen (-), or -1 for invalid pattern
  */
 int hex_to_int(uint8_t segment_byte) {
-    const std::bitset<8> segments(segment_byte);
+    // Mask out the decimal point bit (MSB) to get just the segment pattern
+    uint8_t pattern = segment_byte & 0x7F;
     
-    // Check for each digit pattern (0-9 and -)
-    if (segments[0] && segments[1] && segments[2] && segments[3] && segments[4] && segments[5] && !segments[6]) return 0;
-    if (!segments[0] && segments[1] && segments[2] && !segments[3] && !segments[4] && !segments[5] && !segments[6]) return 1;
-    if (segments[0] && segments[1] && !segments[2] && segments[3] && segments[4] && !segments[5] && segments[6]) return 2;
-    if (segments[0] && segments[1] && segments[2] && segments[3] && !segments[4] && !segments[5] && segments[6]) return 3;
-    if (!segments[0] && segments[1] && segments[2] && !segments[3] && !segments[4] && segments[5] && segments[6]) return 4;
-    if (segments[0] && !segments[1] && segments[2] && segments[3] && !segments[4] && segments[5] && segments[6]) return 5;
-    if (segments[0] && !segments[1] && segments[2] && segments[3] && segments[4] && segments[5] && segments[6]) return 6;
-    if (segments[0] && segments[1] && segments[2] && !segments[3] && !segments[4] && !segments[5] && !segments[6]) return 7;
-    if (segments[0] && segments[1] && segments[2] && segments[3] && segments[4] && segments[5] && segments[6]) return 8;
-    if (segments[0] && segments[1] && segments[2] && segments[3] && !segments[4] && segments[5] && segments[6]) return 9;
-    if (!segments[0] && !segments[1] && !segments[2] && !segments[3] && !segments[4] && !segments[5] && segments[6]) return 10; // Hyphen (-)
-    
-    return 0; // Default to 0 for invalid patterns
+    // Convert 7-segment pattern to digit (0-10, where 10 is '-')
+    switch (pattern) {
+        case 0b0111111: return 0;  // abcdef
+        case 0b0000110: return 1;  // bc
+        case 0b1011011: return 2;  // abdeg
+        case 0b1001111: return 3;  // abcdg
+        case 0b1100110: return 4;  // bcfg
+        case 0b1101101: return 5;  // acdfg
+        case 0b1111101: return 6;  // acdefg
+        case 0b0000111: return 7;  // abc
+        case 0b1111111: return 8;  // abcdefg
+        case 0b1101111: return 9;  // abcdfg
+        case 0b0100000: return 10; // g (hyphen)
+        default:        return -1; // Invalid pattern
+    }
 }
 
 /**
