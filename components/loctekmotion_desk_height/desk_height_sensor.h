@@ -50,7 +50,7 @@ private:
     void reset_state();
 
     // ========== MEMBER VARIABLES ==========
-    std::array<uint8_t, HISTORY_BUFFER_SIZE> history_ = {0};
+    std::array<uint8_t, HISTORY_BUFFER_SIZE> history_ = {{0}};
     
     // Packet parsing state
     uint8_t msg_len_ = 0;

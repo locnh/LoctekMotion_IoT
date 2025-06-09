@@ -8,9 +8,14 @@ namespace loctekmotion_desk_height {
 static const char *const TAG = "loctekmotion_desk_height";
 
 // ========== PRIVATE METHOD IMPLEMENTATIONS ==========
-
 void DeskHeightSensor::setup() {
-    // Nothing to do here for now
+    // Initialize UART
+    this->set_baud_rate(9600);
+    this->set_rx_buffer_size(64);
+    this->set_stop_bits(1);
+    this->set_data_bits(8);
+    this->set_parity(UART_CONFIG_PARITY_NONE);
+    this->reset_state();
 }
 
 void DeskHeightSensor::reset_state() {
@@ -81,16 +86,22 @@ void DeskHeightSensor::process_height_value(uint8_t third_digit) {
         return;
     }
     
-    // Calculate height in cm
-    float height = (hundreds * 100.0f) + (tens * 10.0f) + ones;
+    // Calculate height in cm (using integer math first for precision)
+    int32_t height_x10;
     
-    // Apply decimal point if present in the tens digit
     if (has_decimal_point(history_[0])) {
-        height /= 10.0f;
+        // Decimal point is after tens place (e.g., "12.3" -> 12.3 cm)
+        // hundreds = 1, tens = 2, ones = 3 -> 12.3 cm
+        height_x10 = (hundreds * 100) + (tens * 10) + ones;  // 1*100 + 2*10 + 3 = 123
+    } else {
+        // No decimal point (e.g., "123" -> 123.0 cm)
+        // hundreds = 1, tens = 2, ones = 3 -> 123.0 cm
+        height_x10 = (hundreds * 1000) + (tens * 100) + (ones * 10);  // 1*1000 + 2*100 + 3*10 = 1230
     }
     
-    // Update the current height
-    current_height_ = height;
+    // Convert to float (dividing by 10 to get cm from tenths of cm)
+    current_height_ = height_x10 / 10.0f;
+    
     ESP_LOGD(TAG, "Desk height updated: %.1f cm", current_height_);
 }
 
@@ -102,7 +113,7 @@ void DeskHeightSensor::loop() {
             continue;
         }
         
-        // Shift history buffer
+        // Shift history buffer (using rotate is efficient for small buffers)
         std::rotate(history_.rbegin(), history_.rbegin() + 1, history_.rend());
         history_[0] = incoming_byte;
         
@@ -112,10 +123,11 @@ void DeskHeightSensor::loop() {
             continue;
         }
         
-        // Process packet based on position in history
+        // Only process if we have a valid packet start in history
         if (history_[1] == PACKET_START_BYTE) {
             // Second byte is message length
             msg_len_ = incoming_byte;
+            is_valid_packet_ = false;  // Reset until we validate the packet
         } 
         else if (history_[2] == PACKET_START_BYTE) {
             // Third byte is message type
@@ -129,6 +141,8 @@ void DeskHeightSensor::loop() {
                 if (!is_valid_packet_) {
                     ESP_LOGD(TAG, "Invalid first height digit: 0x%02X", incoming_byte);
                 }
+            } else {
+                is_valid_packet_ = false;
             }
         }
         else if (history_[4] == PACKET_START_BYTE && is_valid_packet_) {
@@ -139,10 +153,12 @@ void DeskHeightSensor::loop() {
             // End of packet - process the complete height value
             process_height_value(history_[0]);
             
-            // Publish if height has changed
-            if (current_height_ != last_published_height_) {
+            // Publish if height has changed (with hysteresis to prevent noise)
+            const float height_change = fabsf(current_height_ - last_published_height_);
+            if (height_change >= 0.1f) {  // 1mm threshold
                 publish_state(current_height_);
                 last_published_height_ = current_height_;
+                ESP_LOGD(TAG, "Published new height: %.1f cm", current_height_);
             }
         }
     }
