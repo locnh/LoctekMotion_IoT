@@ -1,146 +1,156 @@
 #include "desk_height_sensor.h"
 #include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
-#include <bitset>
 
 namespace esphome {
 namespace loctekmotion_desk_height {
 
-static const char *const TAG = "loctekmotion_desk_height.sensor";
+static const char *const TAG = "loctekmotion_desk_height";
 
-// ========== UTILITY METHODS ==========
-int hex_to_int(uint8_t s) {
-  std::bitset<8> b(s);
+// ========== PRIVATE METHOD IMPLEMENTATIONS ==========
 
-  if (b[0] && b[1] && b[2] && b[3] && b[4] && b[5] && !b[6]) {
-    return 0;
-  }
-  if (not b[0] && b[1] && b[2] && !b[3] && !b[4] && !b[5] && !b[6]) {
-    return 1;
-  }
-  if (b[0] && b[1] && !b[2] && b[3] && b[4] && !b[5] && b[6]) {
-    return 2;
-  }
-  if (b[0] && b[1] && b[2] && b[3] && !b[4] && !b[5] && b[6]) {
-    return 3;
-  }
-  if (not b[0] && b[1] && b[2] && !b[3] && !b[4] && b[5] && b[6]) {
-    return 4;
-  }
-  if (b[0] && !b[1] && b[2] && b[3] && !b[4] && b[5] && b[6]) {
-    return 5;
-  }
-  if (b[0] && !b[1] && b[2] && b[3] && b[4] && b[5] && b[6]) {
-    return 6;
-  }
-  if (b[0] && b[1] && b[2] && !b[3] && !b[4] && !b[5] && !b[6]) {
-    return 7;
-  }
-  if (b[0] && b[1] && b[2] && b[3] && b[4] && b[5] && b[6]) {
-    return 8;
-  }
-  if (b[0] && b[1] && b[2] && b[3] && !b[4] && b[5] && b[6]) {
-    return 9;
-  }
-  if (!b[0] && !b[1] && !b[2] && !b[3] && !b[4] && !b[5] && b[6]) {
-    return 10;
-  }
-  return 0;
+void DeskHeightSensor::setup() {
+    // Nothing to do here for now
 }
 
-bool is_decimal(uint8_t b) { return (b & 0x80) == 0x80; }
+void DeskHeightSensor::reset_state() {
+    msg_len_ = 0;
+    msg_type_ = 0;
+    is_valid_packet_ = false;
+    std::fill(history_.begin(), history_.end(), 0);
+}
 
-// ========== INTERNAL METHODS ==========
-void DeskHeightSensor::loop() {
-  uint8_t incomingByte;
-  while (this->available() > 0) {
-    if (this->read_byte(&incomingByte)) {
-      // ESP_LOGD("DEBUG", "Incoming byte is: %08x", incomingByte);
-
-      // First byte, start of a packet
-      if (incomingByte == 0x9b) {
-        // Reset message length
-        this->msg_len = 0;
-        this->valid = false;
-      }
-
-      // Second byte defines the message length
-      if (this->history[0] == 0x9b) {
-        this->msg_len = incomingByte;
-      }
-
-      // Third byte is message type
-      if (this->history[1] == 0x9b) {
-        this->msg_type = incomingByte;
-      }
-
-      // Fourth byte is first height digit, if msg type 0x12 & msg len 7
-      if (this->history[2] == 0x9b) {
-
-        if (this->msg_type == 0x12 &&
-            (this->msg_len == 7 || this->msg_len == 10)) {
-          // Empty height
-          if (incomingByte == 0) {
-            // ESP_LOGD("DEBUG", "Height 1 is EMPTY -> 0x%02x", incomingByte);
-            // deskSerial.write(command_wakeup, sizeof(command_wakeup));
-          } else if (hex_to_int(incomingByte) == 0) {
-            // ESP_LOGD("DEBUG", "Invalid height 1 -> 0x%02x", incomingByte);
-            // deskSerial.write(command_wakeup, sizeof(command_wakeup));
-          } else {
-            this->valid = true;
-            //   ESP_LOGD("DEBUG", "Height 1 is: 0x%02x", incomingByte);
-          }
-        }
-      }
-
-      // Fifth byte is second height digit
-      if (this->history[3] == 0x9b) {
-        if (this->valid == true) {
-          // ESP_LOGD("DEBUG", "Height 2 is: 0x%02x", incomingByte);
-        }
-      }
-
-      // Sixth byte is third height digit
-      if (this->history[4] == 0x9b) {
-        if (this->valid == true) {
-          int height1 = hex_to_int(this->history[1]) * 100;
-          int height2 = hex_to_int(this->history[0]) * 10;
-          int height3 = hex_to_int(incomingByte);
-          if (height2 == 100) // check if 'number' is a hyphen, return value 10
-                              // multiplied by 10
-          {
-          } else {
-            float finalHeight = height1 + height2 + height3;
-            if (is_decimal(this->history[0])) {
-              finalHeight = finalHeight / 10;
-            }
-            this->value = finalHeight;
-            // ESP_LOGD("DeskHeightSensor", "Current height is: %f",
-            // finalHeight);
-          }
-        }
-      }
-
-      // Save byte buffer to history arrary
-      this->history[4] = this->history[3];
-      this->history[3] = this->history[2];
-      this->history[2] = this->history[1];
-      this->history[1] = this->history[0];
-      this->history[0] = incomingByte;
-
-      // End byte
-      if (incomingByte == 0x9d) {
-        if (this->value && this->value != this->lastPublished) {
-          this->publish_state(this->value);
-          this->lastPublished = this->value;
-        }
-      }
+/**
+ * @brief Convert a 7-segment display pattern byte to its corresponding digit
+ * 
+ * This function decodes the segment pattern from a 7-segment display byte.
+ * The segments are mapped to bits in the following order (LSB to MSB):
+ *
+ *    -- a --    Bit 0: segment a (bottom)
+ *   |       |   Bit 1: segment b (lower right)
+ *   f       b   Bit 2: segment c (upper right)
+ *   |       |   Bit 3: segment d (top)
+ *    -- g --    Bit 4: segment e (upper left)
+ *   |       |   Bit 5: segment f (lower left)
+ *   e       c   Bit 6: segment g (middle)
+ *   |       | 
+ *    -- d --
+ *
+ * For example, the digit '0' is represented by lighting up segments a-f (0b0111111).
+ * The decimal point (DP) is ignored as it's masked out (bit 7).
+ * 
+ * @param segment_byte The byte containing the segment pattern (bit 7 = DP, bits 6-0 = segments g-a)
+ * @return int8_t The decoded digit (0-9), 10 for hyphen (-), or -1 for invalid pattern
+ */
+int8_t DeskHeightSensor::segment_to_digit(uint8_t segment_byte) {
+    // Mask out the decimal point bit (MSB) to get just the segment pattern
+    uint8_t pattern = segment_byte & 0x7F;
+    
+    // Convert 7-segment pattern to digit (0-10, where 10 is '-')
+    switch (pattern) {
+        case 0b0111111: return 0;  // abcdef
+        case 0b0000110: return 1;  // bc
+        case 0b1011011: return 2;  // abdeg
+        case 0b1001111: return 3;  // abcdg
+        case 0b1100110: return 4;  // bcfg
+        case 0b1101101: return 5;  // acdfg
+        case 0b1111101: return 6;  // acdefg
+        case 0b0000111: return 7;  // abc
+        case 0b1111111: return 8;  // abcdefg
+        case 0b1101111: return 9;  // abcdfg
+        case 0b0100000: return 10; // g (hyphen)
+        default:        return -1; // Invalid pattern
     }
-  }
+}
+
+void DeskHeightSensor::process_height_value(uint8_t third_digit) {
+    // Convert each segment to its numeric value
+    const int8_t hundreds = segment_to_digit(history_[1]);
+    const int8_t tens = segment_to_digit(history_[0]);
+    const int8_t ones = segment_to_digit(third_digit);
+    
+    // Validate digit conversions
+    if (hundreds < 0 || tens < 0 || ones < 0) {
+        ESP_LOGD(TAG, "Invalid segment pattern in height value");
+        return;
+    }
+    
+    // Skip if tens digit is a hyphen (treated as invalid for height)
+    if (tens == 10) {
+        ESP_LOGD(TAG, "Skipping height update - hyphen in tens place");
+        return;
+    }
+    
+    // Calculate height in cm
+    float height = (hundreds * 100.0f) + (tens * 10.0f) + ones;
+    
+    // Apply decimal point if present in the tens digit
+    if (has_decimal_point(history_[0])) {
+        height /= 10.0f;
+    }
+    
+    // Update the current height
+    current_height_ = height;
+    ESP_LOGD(TAG, "Desk height updated: %.1f cm", current_height_);
+}
+
+void DeskHeightSensor::loop() {
+    uint8_t incoming_byte;
+    
+    while (this->available() > 0) {
+        if (!this->read_byte(&incoming_byte)) {
+            continue;
+        }
+        
+        // Shift history buffer
+        std::rotate(history_.rbegin(), history_.rbegin() + 1, history_.rend());
+        history_[0] = incoming_byte;
+        
+        // Check for packet start
+        if (incoming_byte == PACKET_START_BYTE) {
+            reset_state();
+            continue;
+        }
+        
+        // Process packet based on position in history
+        if (history_[1] == PACKET_START_BYTE) {
+            // Second byte is message length
+            msg_len_ = incoming_byte;
+        } 
+        else if (history_[2] == PACKET_START_BYTE) {
+            // Third byte is message type
+            msg_type_ = incoming_byte;
+        } 
+        else if (history_[3] == PACKET_START_BYTE) {
+            // Fourth byte is first height digit
+            if (msg_type_ == HEIGHT_MESSAGE_TYPE && 
+                (msg_len_ == 7 || msg_len_ == 10)) {
+                is_valid_packet_ = (incoming_byte != 0 && segment_to_digit(incoming_byte) >= 0);
+                if (!is_valid_packet_) {
+                    ESP_LOGD(TAG, "Invalid first height digit: 0x%02X", incoming_byte);
+                }
+            }
+        }
+        else if (history_[4] == PACKET_START_BYTE && is_valid_packet_) {
+            // Fifth byte is second height digit
+            // No action needed, just store in history for final processing
+        }
+        else if (incoming_byte == PACKET_END_BYTE && is_valid_packet_) {
+            // End of packet - process the complete height value
+            process_height_value(history_[0]);
+            
+            // Publish if height has changed
+            if (current_height_ != last_published_height_) {
+                publish_state(current_height_);
+                last_published_height_ = current_height_;
+            }
+        }
+    }
 }
 
 void DeskHeightSensor::dump_config() {
-  LOG_SENSOR("", "LoctekMotion Desk Height Sensor", this);
+    ESP_LOGCONFIG(TAG, "LoctekMotion Desk Height Sensor:");
+    LOG_UPDATE_INTERVAL(this);
 }
 
 } // namespace loctekmotion_desk_height
