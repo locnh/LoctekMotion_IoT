@@ -9,12 +9,9 @@ static const char *const TAG = "loctekmotion_desk_height";
 
 // ========== PRIVATE METHOD IMPLEMENTATIONS ==========
 void DeskHeightSensor::setup() {
-    // Initialize UART
-    this->set_baud_rate(9600);
-    this->set_rx_buffer_size(64);
-    this->set_stop_bits(1);
-    this->set_data_bits(8);
-    this->set_parity(UART_CONFIG_PARITY_NONE);
+    // UART configuration is handled by ESPHome's UART component
+    // The actual UART configuration should be set in the YAML configuration
+    // using the uart component's settings
     this->reset_state();
 }
 
