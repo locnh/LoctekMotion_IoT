@@ -125,6 +125,16 @@ void DeskHeightSensor::process_height_value(uint8_t d3_byte_arg) {
     const int d2_val = decode_segment_pattern(this->history_[1]); // Tens
     const int d3_val = decode_segment_pattern(d3_byte_arg);       // Units
     
+    // Check for child lock pattern (LoC)
+    if (is_child_lock_active()) {
+        this->child_lock_active_ = true;
+        this->value_data_ = -2.0f; // Special value for child lock
+        this->has_value_ = true;
+        return;
+    }
+    
+    this->child_lock_active_ = false;
+    
     // Validate digits: D1 must be 1-9. D2, D3 must be 0-9. D2 can be 10 (hyphen).
     if (d1_val >= 1 && d1_val <= 9 && d2_val >= 0 && d2_val <= 10 && d3_val >= 0 && d3_val <= 9) {
         if (d2_val == 10) { // Tens digit is a hyphen
@@ -155,7 +165,7 @@ void DeskHeightSensor::loop() {
             // Check for packet end and publish if we have a new value
             if (incoming_byte == PACKET_END_BYTE &&
                 this->has_value_ &&
-                (!this->has_last_published_value_ || this->value_data_ != this->last_published_value_data_)) {
+                (!this->has_last_published_value_ || this->value_data_ != this->last_published_value_data_ || this->child_lock_active_)) {
                 this->publish_state(this->value_data_);
                 this->last_published_value_data_ = this->value_data_;
                 this->has_last_published_value_ = true;
@@ -164,8 +174,20 @@ void DeskHeightSensor::loop() {
     }
 }
 
+bool DeskHeightSensor::is_child_lock_active() const {
+    // Check for 'L' (edf = 0101101 = 0x2D) in D1
+    bool has_L = (this->history_[2] & 0x7F) == 0x2D; // 0101101
+    // Check for 'o' (cdeg = 0111011 = 0x3B) in D2
+    bool has_o = (this->history_[1] & 0x7F) == 0x3B; // 0111011
+    // Check for 'C' (aedf = 0111101 = 0x3D) in D3
+    bool has_C = (this->history_[0] & 0x7F) == 0x3D; // 0111101
+    
+    return has_L && has_o && has_C;
+}
+
 void DeskHeightSensor::dump_config() {
     LOG_SENSOR("", "LoctekMotion Desk Height Sensor", this);
+    ESP_LOGCONFIG(TAG, "  Child Lock Detection: Enabled");
 }
 
 } // namespace loctekmotion_desk_height

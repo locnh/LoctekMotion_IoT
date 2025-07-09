@@ -41,6 +41,10 @@ private:
     /// Process the complete height value from the packet
     void process_height_value(uint8_t third_digit);
 
+    // ========== CHILD LOCK DETECTION ==========
+    /// Check if the current history buffer contains the child lock pattern (LoC)
+    bool is_child_lock_active() const;
+    
     // ========== MEMBER VARIABLES ==========
     // Needs to be 6 to access history_[5] for PACKET_START_BYTE check when processing 6th data byte (D3)
     static constexpr size_t HISTORY_BUFFER_SIZE = 6;
@@ -48,6 +52,7 @@ private:
     /// Last calculated height value (in cm)
     float value_data_{0.0f};
     bool has_value_{false};
+    bool child_lock_active_{false};
     
     /// Last published height value (to avoid duplicate updates)
     float last_published_value_data_{0.0f};
