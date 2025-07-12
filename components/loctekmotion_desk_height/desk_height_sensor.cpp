@@ -118,12 +118,12 @@ void DeskHeightSensor::process_packet_byte(uint8_t byte) {
 
 // Check if the current display shows "LoC" pattern
 bool DeskHeightSensor::check_child_lock_pattern(uint8_t d1, uint8_t d2, uint8_t d3) {
-    // L = def  (0b00111000)
-    // o = cdeg (0b01011100)
-    // C = adef (0b00111001)
-    const uint8_t L_PATTERN = 0x38;  // 00111000
-    const uint8_t o_PATTERN = 0x5C;  // 01011100
-    const uint8_t C_PATTERN = 0x39;  // 00111001
+    // L = def  (0b0111000)
+    // o = cdeg (0b1011100)
+    // C = adef (0b0111001)
+    const uint8_t L_PATTERN = 0x1C;  // 0111000
+    const uint8_t o_PATTERN = 0x2E;  // 1011100
+    const uint8_t C_PATTERN = 0x39;  // 0111001
     
     // Check if the pattern matches "LoC"
     return (d1 == L_PATTERN) && (d2 == o_PATTERN) && (d3 == C_PATTERN);
