@@ -139,9 +139,9 @@ void DeskHeightSensor::process_height_value(uint8_t d3_byte_arg) {
     if (check_child_lock_pattern(this->history_[2], this->history_[1], d3_byte_arg)) {
         if (!this->is_child_lock_) {
             this->is_child_lock_ = true;
-            this->value_data_ = 0.0f;  // Return 0 when locked
+            this->value_data_ = LOCKED_STATE;  // Return LOCKED_STATE when locked
             this->has_value_ = true;
-            this->publish_state(0.0f);  // Publish 0 immediately when locked
+            this->publish_state(LOCKED_STATE);  // Publish LOCKED_STATE immediately when locked
             ESP_LOGD(TAG, "Child lock detected (LoC pattern)");
         }
         return;

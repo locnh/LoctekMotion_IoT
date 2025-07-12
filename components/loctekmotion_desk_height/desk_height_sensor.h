@@ -45,6 +45,9 @@ private:
     /// Check if the current display shows "LoC" pattern
     bool check_child_lock_pattern(uint8_t d1, uint8_t d2, uint8_t d3);
 
+    // ========== CONSTANTS ==========
+    static constexpr float LOCKED_STATE = -2.0f;  // Value to return when desk is locked
+    
     // ========== MEMBER VARIABLES ==========
     // Needs to be 6 to access history_[5] for PACKET_START_BYTE check when processing 6th data byte (D3)
     static constexpr size_t HISTORY_BUFFER_SIZE = 6;
