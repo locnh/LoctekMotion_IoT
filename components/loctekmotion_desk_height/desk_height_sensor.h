@@ -6,6 +6,7 @@
 #include "esphome/components/uart/uart.h"
 #include "esphome/core/component.h"
 #include "esphome/core/helpers.h"
+#include "esphome/core/log.h"
 
 namespace esphome {
 namespace loctekmotion_desk_height {
@@ -40,6 +41,9 @@ private:
     
     /// Process the complete height value from the packet
     void process_height_value(uint8_t third_digit);
+    
+    /// Check if the current display shows "LoC" pattern
+    bool check_child_lock_pattern(uint8_t d1, uint8_t d2, uint8_t d3);
 
     // ========== MEMBER VARIABLES ==========
     // Needs to be 6 to access history_[5] for PACKET_START_BYTE check when processing 6th data byte (D3)
@@ -63,7 +67,10 @@ private:
     uint8_t msg_type_ = 0;
     
     /// Flag indicating if current packet is valid
-    bool is_valid_packet_ = false;
+    bool is_valid_packet_{false};
+    
+    /// Flag indicating if child lock is active
+    bool is_child_lock_{false};
 };
 
 } // namespace loctekmotion_desk_height

@@ -116,11 +116,43 @@ void DeskHeightSensor::process_packet_byte(uint8_t byte) {
     }
 }
 
+// Check if the current display shows "LoC" pattern
+bool DeskHeightSensor::check_child_lock_pattern(uint8_t d1, uint8_t d2, uint8_t d3) {
+    // L = def (0b0111000)
+    // o = cdeg (0b0011110)
+    // C = adef (0b0111001)
+    const uint8_t L_PATTERN = 0x38;  // 00111000
+    const uint8_t o_PATTERN = 0x3C;  // 00111100
+    const uint8_t C_PATTERN = 0x39;  // 00111001
+    
+    // Check if the pattern matches "LoC"
+    return (d1 == L_PATTERN) && (d2 == o_PATTERN) && (d3 == C_PATTERN);
+}
+
 void DeskHeightSensor::process_height_value(uint8_t d3_byte_arg) {
     // When this is called:
     // d3_byte_arg is history_[0] (current byte, D3)
     // history_[1] is D2
     // history_[2] is D1
+    
+    // First check for child lock pattern
+    if (check_child_lock_pattern(this->history_[2], this->history_[1], d3_byte_arg)) {
+        if (!this->is_child_lock_) {
+            this->is_child_lock_ = true;
+            this->value_data_ = 0.0f;  // Return 0 when locked
+            this->has_value_ = true;
+            this->publish_state(0.0f);  // Publish 0 immediately when locked
+            ESP_LOGD(TAG, "Child lock detected (LoC pattern)");
+        }
+        return;
+    }
+    
+    // If we get here, it's not a child lock pattern
+    if (this->is_child_lock_) {
+        this->is_child_lock_ = false;
+        ESP_LOGD(TAG, "Child lock released");
+    }
+    
     const int d1_val = decode_segment_pattern(this->history_[2]); // Hundreds
     const int d2_val = decode_segment_pattern(this->history_[1]); // Tens
     const int d3_val = decode_segment_pattern(d3_byte_arg);       // Units
